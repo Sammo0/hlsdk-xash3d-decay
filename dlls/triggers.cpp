@@ -2500,17 +2500,17 @@ void CTriggerEndDecay::KeyValue( KeyValueData *pkvd )
 	}
 	else if( FStrEq( pkvd->szKeyName, "accuracya" ) )
 	{
-		m_flAccuracy[0] = atof( pkvd->szValue );
+		m_flAccuracyA[0] = atof( pkvd->szValue );
 		pkvd->fHandled = TRUE;
 	}
 	else if( FStrEq( pkvd->szKeyName, "accuracyb" ) )
 	{
-		m_flAccuracy[1] = atof( pkvd->szValue );
+		m_flAccuracyA[1] = atof( pkvd->szValue );
 		pkvd->fHandled = TRUE;
 	}
 	else if( FStrEq( pkvd->szKeyName, "accuracyc" ) )
 	{
-		m_flAccuracy[2] = atof( pkvd->szValue );
+		m_flAccuracyA[2] = atof( pkvd->szValue );
 		pkvd->fHandled = TRUE;
 	}
 	else if( FStrEq( pkvd->szKeyName, "section" ) )
