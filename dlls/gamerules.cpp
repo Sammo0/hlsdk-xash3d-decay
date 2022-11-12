@@ -312,8 +312,14 @@ CGameRules *InstallGameRules( void )
 {
 	SERVER_COMMAND( "exec game.cfg\n" );
 	SERVER_EXECUTE();
+	ALERT( at_console, "Installing game rule...\n" );
 
-	if( !gpGlobals->deathmatch )
+	if( g_bIsDecayGame )
+	{
+		return new CHalfLifeRules;
+		//return new CDecayRules;
+	}
+	else if( !gpGlobals->deathmatch )
 	{
 		// generic half-life
 		g_teamplay = 0;

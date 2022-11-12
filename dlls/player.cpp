@@ -47,6 +47,10 @@ extern DLL_GLOBAL int g_iSkillLevel, gDisplayTitle;
 
 extern "C" int g_bhopcap;
 
+extern BOOL g_bIsSlaveCoOp;
+extern BOOL g_bIsDecayGame;
+extern int g_iStartSuit;
+
 BOOL gInitHUD = TRUE;
 
 extern void CopyToBodyQue( entvars_t *pev);
@@ -189,6 +193,16 @@ int gmsgBhopcap = 0;
 int gmsgStatusText = 0;
 int gmsgStatusValue = 0;
 
+int gmsgLensFlare = 0;
+int gmsgAimFrame = 0;
+int gmsgNotepad = 0;
+int gmsgChangeMode = 0;
+int gmsgChangePlayer = 0;
+int gmsgCamera = 0;
+int gmsgSparePlayer = 0;
+int gmsgAlienState = 0;
+int gmsgDecayName = 0;
+
 void LinkUserMessages( void )
 {
 	// Already taken care of?
@@ -236,6 +250,16 @@ void LinkUserMessages( void )
 
 	gmsgStatusText = REG_USER_MSG( "StatusText", -1 );
 	gmsgStatusValue = REG_USER_MSG( "StatusValue", 3 );
+
+	gmsgLensFlare = REG_USER_MSG( "LensFlare", 1 );
+	gmsgAimFrame = REG_USER_MSG( "AimFrame", 14 );
+	gmsgNotepad = REG_USER_MSG( "Notepad", -1 );
+	gmsgChangeMode = REG_USER_MSG( "ChangeMode", 1 );
+	gmsgChangePlayer = REG_USER_MSG( "ChangePlr", 1 );
+	gmsgCamera = REG_USER_MSG( "Camera", 7 );
+	gmsgSparePlayer = REG_USER_MSG( "SparePlayer", 1 );
+	gmsgAlienState = REG_USER_MSG( "AlienState", 1 );
+	gmsgDecayName = REG_USER_MSG( "DecayName", 1 );
 }
 
 LINK_ENTITY_TO_CLASS( player, CBasePlayer )
@@ -2899,7 +2923,11 @@ void CBasePlayer::Spawn( void )
 	m_iStepLeft = 0;
 	m_flFieldOfView = 0.5;// some monsters use this to determine whether or not the player is looking at them.
 
-	m_bloodColor = BLOOD_COLOR_RED;
+	if( g_bIsSlaveCoOp )
+		m_bloodColor = BLOOD_COLOR_GREEN;
+	else
+		m_bloodColor = BLOOD_COLOR_RED;
+
 	m_flNextAttack = UTIL_WeaponTimeBase();
 	StartSneaking();
 
@@ -2912,7 +2940,11 @@ void CBasePlayer::Spawn( void )
 	g_pGameRules->SetDefaultPlayerTeam( this );
 	g_pGameRules->GetPlayerSpawnSpot( this );
 
-	SET_MODEL( ENT( pev ), "models/player.mdl" );
+	if( g_bIsSlaveCoOp )
+		SET_MODEL( ENT( pev ), "models/player/dm_slave/dm_slave.mdl" );
+	else
+		SET_MODEL( ENT( pev ), "models/player.mdl" );
+
 	g_ulModelIndexPlayer = pev->modelindex;
 	pev->sequence = LookupActivity( ACT_IDLE );
 
@@ -2952,7 +2984,54 @@ void CBasePlayer::Spawn( void )
 
 	m_flNextChatTime = gpGlobals->time;
 
+	// START BOT
+	pBotCam = NULL;
+	// END BOT
 	g_pGameRules->PlayerSpawn( this );
+
+	if( g_bIsSlaveCoOp )
+		SET_CLIENT_KEY_VALUE( entindex(), GET_INFOBUFFER( edict() ), "model", "player/dm_slave/dm_slave" );
+	else
+		SET_CLIENT_KEY_VALUE( entindex(), GET_INFOBUFFER( edict() ), "model", "ginacol" );
+
+	if( m_iDecay == 1 )
+	{
+		SetBodygroup( 1, 1 );
+		pev->skin = 1;
+	}
+	else if( m_iDecay == 2 )
+	{
+		SetBodygroup( 1, 0 );
+		pev->skin = 0;
+	}
+	else
+		SetBodygroup( 0, 0 );
+
+	if( gmsgChangePlayer )
+	{
+		MESSAGE_BEGIN( MSG_ONE, gmsgChangePlayer, NULL, pev );
+			WRITE_BYTE( m_iDecay );
+		MESSAGE_END();
+	}
+	else
+	{
+		ALERT( at_console, "Message gmsgChangePlayer not found in client!\n" );
+	}
+	ALERT( at_console, "(CBasePlayer::Spawn) m_iDecay = %d\n", m_iDecay );
+
+	if( g_iStartSuit )
+	{
+		if( !g_bIsSlaveCoOp )
+		{
+			CBaseEntity *pWeaponEntity;
+			GiveNamedItem( "item_suit" );
+
+			while( ( pWeaponEntity = UTIL_FindEntityByClassname( pWeaponEntity, "game_player_equip" ) ) != NULL )
+			{
+				pWeaponEntity->Touch( this );
+			}
+		}
+	}
 }
 
 void CBasePlayer::Precache( void )
@@ -3042,7 +3121,10 @@ int CBasePlayer::Restore( CRestore &restore )
 	pev->fixangle = TRUE;           // turn this way immediately
 
 	// Copied from spawn() for now
-	m_bloodColor = BLOOD_COLOR_RED;
+	if( g_bIsSlaveCoOp )
+		m_bloodColor = BLOOD_COLOR_GREEN;
+	else
+		m_bloodColor = BLOOD_COLOR_RED;
 
 	g_ulModelIndexPlayer = pev->modelindex;
 
@@ -4549,7 +4631,7 @@ void CDeadHEV::Spawn( void )
 	pev->effects = 0;
 	pev->yaw_speed = 8;
 	pev->sequence = 0;
-	pev->body = 1;
+	SetBodygroup( 1, 4 );
 	m_bloodColor = BLOOD_COLOR_RED;
 
 	pev->sequence = LookupSequence( m_szPoses[m_iPose] );

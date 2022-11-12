@@ -137,12 +137,17 @@ set (SVDLL_SOURCES
 	world.cpp
 	xen.cpp
 	zombie.cpp
+	bot/bot_combat.cpp
+	bot/bot.cpp
+	bot/botcam.cpp
+	decay/displacer.cpp
+	decay/vortihands.cpp
 	../pm_shared/pm_debug.c
 	../pm_shared/pm_math.c
 	../pm_shared/pm_shared.c
 )
 
-include_directories (. wpn_shared ../common ../engine ../pm_shared ../game_shared ../public)
+include_directories (. wpn_shared ../common ../engine ../pm_shared ../game_shared ../public bot)
 
 if(USE_VOICEMGR)
 	set(SVDLL_SOURCES

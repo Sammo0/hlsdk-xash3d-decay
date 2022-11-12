@@ -60,7 +60,9 @@ set (CLDLL_SOURCES
 	../dlls/squeakgrenade.cpp
 	../dlls/tripmine.cpp
 	../dlls/glock.cpp
-	ev_hldm.cpp
+	../dlls/decay/displacer.cpp
+	../dlls/decay/vortihands.cpp
+	ev_hldm.cpp 
 	hl/hl_baseentity.cpp
 	hl/hl_events.cpp
 	hl/hl_objects.cpp

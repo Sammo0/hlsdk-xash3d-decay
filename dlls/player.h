@@ -18,6 +18,10 @@
 
 #include "pm_materials.h"
 
+//START BOT
+class CBotCam;
+//END BOT
+
 #define PLAYER_FATAL_FALL_SPEED		1024// approx 60 feet
 #define PLAYER_MAX_SAFE_FALL_SPEED	580// approx 20 feet
 #define DAMAGE_FOR_FALL_SPEED		(float) 100 / ( PLAYER_FATAL_FALL_SPEED - PLAYER_MAX_SAFE_FALL_SPEED )// damage per unit per second.
@@ -198,6 +202,10 @@ public:
 
 	char m_szTeamName[TEAM_NAME_LENGTH];
 
+	//START BOT
+	CBotCam *pBotCam;
+	//END BOT
+
 	virtual void Spawn( void );
 	void Pain( void );
 
@@ -355,6 +363,7 @@ public:
 #define AUTOAIM_10DEGREES 0.1736481776669
 
 extern int gmsgHudText;
+extern int gmsgNotepad;
 extern BOOL gInitHUD;
 
 #endif // PLAYER_H

@@ -27,6 +27,7 @@
 #include "saverestore.h"
 #include "trains.h"			// trigger_camera has train functionality
 #include "gamerules.h"
+#include "shake.h"
 
 #define	SF_TRIGGER_PUSH_START_OFF	2//spawnflag that makes trigger_push spawn turned OFF
 #define SF_TRIGGER_HURT_TARGETONCE	1// Only fire hurt target once
@@ -564,6 +565,7 @@ public:
 };
 
 LINK_ENTITY_TO_CLASS( trigger_hurt, CTriggerHurt )
+LINK_ENTITY_TO_CLASS( trigger_new_hurt, CTriggerHurt )
 
 //
 // trigger_monsterjump
@@ -863,7 +865,40 @@ void CTriggerHurt::RadiationThink( void )
 //
 void CBaseTrigger::ToggleUse( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value )
 {
-	if( pev->solid == SOLID_NOT )
+	if( FClassnameIs( pev, "trigger_new_hurt" ) )
+	{
+		bool bIsSolid;
+
+		switch( useType )
+		{
+		case USE_ON:
+			bIsSolid = true;
+			break;
+		case USE_OFF:
+			bIsSolid = false;
+			break;
+		case USE_TOGGLE:
+			bIsSolid = ( pev->solid != SOLID_TRIGGER );
+			break;
+		default:
+			bIsSolid = ( pev->solid == SOLID_TRIGGER );
+			break;
+		}
+		if( bIsSolid )
+		{
+			// if the trigger is off, turn it on
+			pev->solid = SOLID_TRIGGER;
+
+			// Force retouch
+			gpGlobals->force_retouch++;
+		}
+		else
+		{
+			// turn the trigger off
+			pev->solid = SOLID_NOT;
+		}
+	}
+	else if( pev->solid == SOLID_NOT )
 	{
 		// if the trigger is off, turn it on
 		pev->solid = SOLID_TRIGGER;
@@ -2054,11 +2089,486 @@ void CTriggerPlayerFreeze::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, U
 		pActivator = CBaseEntity::Instance( g_engfuncs.pfnPEntityOfEntIndex( 1 ) );
 
 	if( pActivator->pev->flags & FL_FROZEN )
-		( (CBasePlayer*)( pActivator ) )->EnableControl( TRUE );
+
+		( (CBasePlayer *)pActivator )->EnableControl( TRUE );
 	else
-		( (CBasePlayer*)( pActivator ) )->EnableControl( FALSE );
+		( (CBasePlayer *)pActivator )->EnableControl( FALSE );
+}
+
+#define SF_SPAWN_ONLYONCE	1
+#define SF_SPAWN_STARTOFF       256
+class CPlayerSpawnTrigger : public CBaseDelay
+{
+public:
+	void Spawn( void );
+	void KeyValue( KeyValueData *pkvd );
+	void Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value );
+
+	int Save( CSave &save );
+	int Restore( CRestore &restore );
+	int ObjectCaps( void ) { return CBaseEntity :: ObjectCaps() & ~FCAP_ACROSS_TRANSITION; }
+	static TYPEDESCRIPTION m_SaveData[];
+
+private:
+	string_t m_szGlobalState;
+	int m_iPlayerIndex;
+	USE_TYPE triggerType;
 };
 
+LINK_ENTITY_TO_CLASS( trigger_clientspawn, CPlayerSpawnTrigger )
+
+// Global Savedata for changelevel friction modifier
+TYPEDESCRIPTION	CPlayerSpawnTrigger::m_SaveData[] =
+{
+	DEFINE_FIELD( CPlayerSpawnTrigger, m_szGlobalState, FIELD_STRING ),
+	DEFINE_FIELD( CPlayerSpawnTrigger, m_iPlayerIndex, FIELD_INTEGER ),
+	DEFINE_FIELD( CPlayerSpawnTrigger, triggerType, FIELD_INTEGER ),
+};
+
+IMPLEMENT_SAVERESTORE( CPlayerSpawnTrigger, CBaseDelay )
+
+void CPlayerSpawnTrigger::Spawn( void )
+{
+}
+
+void CPlayerSpawnTrigger::KeyValue( KeyValueData *pkvd )
+{
+	if( FStrEq( pkvd->szKeyName, "globalstate" ) )
+	{
+		m_szGlobalState = ALLOC_STRING( pkvd->szValue );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "player_index" ) )
+	{
+		m_iPlayerIndex = atoi( pkvd->szValue );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "triggerstate" ) )
+	{
+		int type = atoi( pkvd->szValue );
+                switch( type )
+		{
+		case 0:
+			triggerType = USE_OFF;
+			break;
+		case 2:
+			triggerType = USE_TOGGLE;
+			break;
+		default:
+			triggerType = USE_ON;
+			break;
+		}
+		pkvd->fHandled = TRUE;
+	}
+	else
+		CBaseDelay::KeyValue( pkvd );
+}
+
+void CPlayerSpawnTrigger::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value )
+{
+	if( !m_szGlobalState || gGlobalState.EntityGetState( m_szGlobalState ) == GLOBAL_ON )
+	{
+		if( !FBitSet( pev->spawnflags, SF_SPAWN_STARTOFF )
+			|| !pActivator
+			|| !pActivator->IsPlayer()
+			|| !m_iPlayerIndex
+			|| pActivator->m_iDecay == m_iPlayerIndex )
+		{
+			SUB_UseTargets( this, triggerType, 0 );
+
+			if( FBitSet( pev->spawnflags, SF_SPAWN_ONLYONCE ) )
+				UTIL_Remove( this );
+		}
+	}
+}
+
+class CTriggerBit : public CBaseDelay
+{
+public:
+	void Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value );
+};
+
+LINK_ENTITY_TO_CLASS( trigger_bit, CTriggerBit )
+
+void CTriggerBit::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value )
+{
+	SUB_UseTargets( this, USE_TOGGLE, 1 );
+}
+
+class CTriggerBitCounter : public CMultiSource
+{
+public:
+	void KeyValue( KeyValueData *pkvd );
+	void Spawn();
+        void Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value );
+
+	int Save( CSave &save );
+	int Restore( CRestore &restore );
+	static TYPEDESCRIPTION m_SaveData[];
+private:
+	int m_initialstate;
+	int m_iDesiredBit;
+};
+
+LINK_ENTITY_TO_CLASS( trigger_bit_counter, CMultiSource )
+
+TYPEDESCRIPTION CTriggerBitCounter::m_SaveData[] =
+{
+	DEFINE_FIELD( CTriggerBitCounter, m_initialstate, FIELD_INTEGER ),
+	DEFINE_FIELD( CTriggerBitCounter, m_iDesiredBit, FIELD_INTEGER ),
+};
+
+IMPLEMENT_SAVERESTORE( CTriggerBitCounter, CMultiSource )
+
+void CTriggerBitCounter::KeyValue( KeyValueData *pkvd )
+{
+	if( FStrEq( pkvd->szKeyName, "triggermask" ) )
+	{
+		m_iDesiredBit = atoi( pkvd->szValue );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "initialstate" ) )
+	{
+		m_initialstate = pev->skin = atoi( pkvd->szValue );
+		pkvd->fHandled = TRUE;
+	}
+	else
+		CMultiSource::KeyValue( pkvd );
+}
+
+void CTriggerBitCounter::Spawn()
+{
+	if( !m_globalstate )
+	{
+		REMOVE_ENTITY( ENT( pev ) );
+		return;
+	}
+
+	if( !gGlobalState.EntityInTable( m_globalstate ) )
+		gGlobalState.EntityAdd( m_globalstate, gpGlobals->mapname, (GLOBALESTATE)m_initialstate );
+}
+
+void CTriggerBitCounter::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value )
+{
+	int oldState, newState;
+
+	if( !pActivator )
+		return;
+
+	if( m_globalstate )
+		oldState = gGlobalState.EntityGetState( m_globalstate );
+	else
+		oldState = pev->skin;
+
+	switch( useType )
+	{
+	case USE_OFF:
+		newState = ~pev->skin & oldState;
+		break;
+	case USE_ON:
+		newState = pev->skin | oldState;
+		break;
+	case USE_TOGGLE:
+	default:
+		newState = pev->skin ^ oldState;
+		break;
+	}
+
+	if( newState == m_iDesiredBit )
+		SUB_UseTargets( this, USE_TOGGLE, 0 );
+
+	if( m_globalstate )
+	{
+		if( gGlobalState.EntityInTable( m_globalstate ) )
+			gGlobalState.EntitySetState( m_globalstate, (GLOBALESTATE)newState );
+		else
+			gGlobalState.EntityAdd( m_globalstate, gpGlobals->mapname, (GLOBALESTATE)newState );
+	}
+	else
+		pev->skin = newState;
+}
+
+class CTriggerRandom : public CBaseDelay
+{
+public:
+	void KeyValue( KeyValueData *pkvd );
+	void Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value );
+
+	int Save( CSave &save );
+	int Restore( CRestore &restore );
+	static TYPEDESCRIPTION m_SaveData[];
+private:
+	int m_iRandomRange;
+	int m_iProbability;
+};
+
+LINK_ENTITY_TO_CLASS( trigger_random, CTriggerRandom )
+
+TYPEDESCRIPTION CTriggerRandom::m_SaveData[] =
+{
+	DEFINE_FIELD( CTriggerRandom, m_iRandomRange, FIELD_INTEGER ),
+	DEFINE_FIELD( CTriggerRandom, m_iProbability, FIELD_INTEGER ),
+};
+
+IMPLEMENT_SAVERESTORE( CTriggerRandom, CBaseDelay )
+
+void CTriggerRandom::KeyValue( KeyValueData *pkvd )
+{
+	if( FStrEq( pkvd->szKeyName, "randomrange" ) )
+	{
+		m_iRandomRange = atoi( pkvd->szValue );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "probability" ) )
+	{
+		m_iProbability = atoi( pkvd->szValue );
+		pkvd->fHandled = TRUE;
+	}
+	else
+		CBaseDelay::KeyValue( pkvd );
+}
+
+void CTriggerRandom::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value )
+{
+	int i;
+	char szTargetName[32];
+
+	sprintf( szTargetName, "%s%d", STRING( pev->target ), RANDOM_LONG( 0, m_iRandomRange - 1 ) );
+	for( i = 0; ; i = 1 )
+	{
+		CBaseEntity *pTarget = 0;
+		pTarget = UTIL_FindEntityByTargetname( pTarget, szTargetName );
+		if( !pTarget )
+			break;
+
+		pTarget->Use( pActivator, pCaller, useType, value );
+	}
+
+	if( !i )
+		ALERT( at_console, "Randomly found entity \"%s\" not found!\n", szTargetName );
+}
+
+class CTriggerAutoBot : public CBaseDelay
+{
+public:
+	void Spawn();
+        void Think();
+};
+
+LINK_ENTITY_TO_CLASS( trigger_autobot, CTriggerAutoBot )
+
+void CTriggerAutoBot::Spawn()
+{
+	pev->nextthink = gpGlobals->time + 9.0f;
+}
+
+void CTriggerAutoBot::Think()
+{
+	if( g_bIsDecayGame && g_pGameRules->IsCoOp() )
+	{
+		if( g_pGameRules->CountPlayers() == 1 )
+			SERVER_COMMAND( "addbot\n" );	
+		UTIL_Remove( this );
+	}
+}
+
+class CTriggerKicker : public CBaseDelay
+{
+public:
+	void Spawn();
+	void Touch( CBaseEntity *pOther );
+	void Think();
+private:
+	EHANDLE m_hPlayer;
+};
+
+LINK_ENTITY_TO_CLASS( trigger_kicker, CTriggerKicker )
+
+void CTriggerKicker::Spawn()
+{
+	pev->nextthink = 0;
+}
+
+void CTriggerKicker::Touch( CBaseEntity *pOther )
+{
+	ALERT( at_console, "Going to kick spare player %s!\n", STRING( pOther->pev->netname ) );
+	m_hPlayer = pOther;
+	pev->nextthink = gpGlobals->time + 3.0f;
+}
+
+void CTriggerKicker::Think()
+{
+	if( g_bIsDecayGame && g_pGameRules->IsCoOp() )
+	{
+		char szCmd[64];
+
+		sprintf( szCmd, "kick \"%s\"\n", STRING( m_hPlayer->pev->netname ) );
+
+		SERVER_COMMAND( szCmd );
+		UTIL_Remove( this );
+	}
+}
+
+class CTriggerLockedMission : public CBaseDelay
+{
+public:
+	void Spawn();
+	void Think();
+};
+
+LINK_ENTITY_TO_CLASS( trigger_lockedmission, CTriggerLockedMission )
+
+void CTriggerLockedMission::Spawn()
+{
+	pev->nextthink = 0;
+	pev->message = MAKE_STRING( "DYLOCKED" );
+}
+
+void CTriggerLockedMission::Think()
+{
+	CBasePlayer *pPlayer = 0;
+	while( true )
+	{
+		pPlayer = (CBasePlayer*)UTIL_FindEntityByClassname( pPlayer, "player" );
+		if( !pPlayer )
+			break;
+		if( !FNullEnt( FIND_CLIENT_IN_PVS( pPlayer->edict() ) ) )
+		{
+			pPlayer->EnableControl( FALSE );
+		}
+		else
+			break;
+	}
+	UTIL_ScreenFadeAll( g_vecZero, 7.0f, 3.0f, 255, FFADE_OUT );
+	UTIL_ShowMessageAll( STRING( pev->message ) );
+	pev->nextthink = gpGlobals->time + 7.0f;
+}
+
+class CTriggerEndDecay : public CBaseTrigger
+{
+public:
+	void KeyValue( KeyValueData *pkvd );
+	void Spawn();
+	void EXPORT EndDecayUse( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value );
+	void EXPORT EndDecayThink();
+	void EXPORT EndDecayTouch( CBaseEntity *pOther );
+private:
+	BOOL m_bIsSuccess;
+	int m_iKills[3];
+	int m_iWounds[3];
+	float m_flAccuracyA[3];
+};
+
+LINK_ENTITY_TO_CLASS( trigger_enddecay, CTriggerEndDecay )
+
+void CTriggerEndDecay::KeyValue( KeyValueData *pkvd )
+{
+	if( FStrEq( pkvd->szKeyName, "success" ) )
+	{
+		m_bIsSuccess = ( atoi( pkvd->szValue ) == TRUE );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "woundsa" ) )
+	{
+		m_iWounds[0] = atoi( pkvd->szValue );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "woundsb" ) )
+	{
+		m_iWounds[1] = atoi( pkvd->szValue );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "woundsc" ) )
+	{
+		m_iWounds[2] = atoi( pkvd->szValue );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "killsa" ) )
+	{
+		m_iKills[0] = atoi( pkvd->szValue );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "killsb" ) )
+	{
+		m_iKills[1] = atoi( pkvd->szValue );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "killsc" ) )
+	{
+		m_iKills[2] = atoi( pkvd->szValue );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "accuracya" ) )
+	{
+		m_flAccuracy[0] = atof( pkvd->szValue );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "accuracyb" ) )
+	{
+		m_flAccuracy[1] = atof( pkvd->szValue );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "accuracyc" ) )
+	{
+		m_flAccuracy[2] = atof( pkvd->szValue );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "section" ) )
+	{
+		pev->message = ALLOC_STRING( pkvd->szValue );
+		pkvd->fHandled = TRUE;
+	}
+	else
+		CBaseTrigger::KeyValue( pkvd );
+}
+
+void CTriggerEndDecay::Spawn()
+{
+	if( g_pGameRules->IsDeathmatch() )
+	{
+		REMOVE_ENTITY( ENT( pev ) );
+		return;
+	}
+
+	InitTrigger();
+
+	SetThink( &CBaseEntity::SUB_DoNothing );
+	SetUse( &CTriggerEndDecay::EndDecayUse );
+
+	// If it is a "use only" trigger, then don't set the touch function.
+	if( !( pev->spawnflags & SF_ENDSECTION_USEONLY ) )
+		SetTouch( &CTriggerEndDecay::EndDecayTouch );
+}
+
+void CTriggerEndDecay::EndDecayUse( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value )
+{
+	while( true )
+        {
+                pPlayer = (CBasePlayer*)UTIL_FindEntityByClassname( pPlayer, "player" );
+                if( !pPlayer )
+                        break;
+                if( !FNullEnt( FIND_CLIENT_IN_PVS( pPlayer->edict() ) ) )
+                {
+                        pPlayer->EnableControl( FALSE );
+                }
+                else
+                        break;
+        }
+}
+
+void CTriggerEndDecay::EndDecayTouch( CBaseEntity *pOther )
+{
+        // Only save on clients
+        if( !pOther->IsNetClient() )
+                return;
+
+	SetTouch( NULL );
+	EndDecayUse( pOther, pOther, USE_ON, 1 );
+}
+
+void CTriggerEndDecay::EndDecayThink()
+{
+}
 
 // this is a really bad idea.
 class CTriggerChangeTarget : public CBaseDelay
@@ -2402,3 +2912,5 @@ void CTriggerCamera::Move()
 	float fraction = 2 * gpGlobals->frametime;
 	pev->velocity = ( ( pev->movedir * pev->speed ) * fraction ) + ( pev->velocity * ( 1 - fraction ) );
 }
+
+
