@@ -5,7 +5,7 @@ LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
 
-LOCAL_MODULE := server
+LOCAL_MODULE := server_decay
 
 include $(XASH3D_CONFIG)
 
