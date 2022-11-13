@@ -2544,6 +2544,7 @@ void CTriggerEndDecay::EndDecayUse( CBaseEntity *pActivator, CBaseEntity *pCalle
 {
 	while( true )
         {
+				CBasePlayer* pPlayer = NULL;
                 pPlayer = (CBasePlayer*)UTIL_FindEntityByClassname( pPlayer, "player" );
                 if( !pPlayer )
                         break;
