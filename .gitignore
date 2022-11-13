@@ -20,3 +20,12 @@ cmake_install.cmake
 .waf-*
 .lock*
 *.pyc
+.vs/CMake Overview
+*.vsidx
+*.lock
+.vs/hlsdk-xash3d-decay/v17/.wsuo
+.vs/hlsdk-xash3d-decay/v17/Browse.VC.db
+*.ipch
+.vs/ProjectSettings.json
+.vs/slnx.sqlite
+.vs/VSWorkspaceState.json
